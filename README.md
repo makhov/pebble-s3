@@ -1,5 +1,9 @@
 # pebble-s3
 
+[![CI](https://github.com/makhov/pebble-s3/actions/workflows/ci.yml/badge.svg)](https://github.com/makhov/pebble-s3/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/makhov/pebble-s3.svg)](https://pkg.go.dev/github.com/makhov/pebble-s3)
+[![Go Report Card](https://goreportcard.com/badge/github.com/makhov/pebble-s3)](https://goreportcard.com/report/github.com/makhov/pebble-s3)
+
 An S3-compatible [VFS](https://pkg.go.dev/github.com/cockroachdb/pebble/vfs#FS) backend for [Pebble](https://github.com/cockroachdb/pebble), allowing you to store a Pebble database entirely in any S3-compatible service.
 
 ## Requirements

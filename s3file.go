@@ -57,6 +57,10 @@ func (f *s3File) Read(p []byte) (int, error) {
 }
 
 func (f *s3File) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 {
+		return 0, fmt.Errorf("s3vfs: negative offset %d", off)
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
@@ -90,6 +94,10 @@ func (f *s3File) Write(p []byte) (int, error) {
 }
 
 func (f *s3File) WriteAt(p []byte, off int64) (int, error) {
+	if off < 0 {
+		return 0, fmt.Errorf("s3vfs: negative offset %d", off)
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
@@ -98,6 +106,7 @@ func (f *s3File) WriteAt(p []byte, off int64) (int, error) {
 	if !f.writable {
 		return 0, fmt.Errorf("s3vfs: file %q is read-only", f.name)
 	}
+
 	end := off + int64(len(p))
 	f.growLocked(end)
 	copy(f.data[off:], p)

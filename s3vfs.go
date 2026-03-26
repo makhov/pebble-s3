@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -40,6 +41,9 @@ func (fs *S3FS) s3Key(name string) string {
 	// Normalize to forward slashes and clean the path.
 	name = path.Clean("/" + strings.ReplaceAll(name, "\\", "/"))
 	name = strings.TrimPrefix(name, "/")
+	if name == "" {
+		return fs.prefix // may be "" for root; avoids trailing slash
+	}
 	if fs.prefix == "" {
 		return name
 	}
@@ -168,7 +172,7 @@ func (fs *S3FS) Rename(oldname, newname string) error {
 // ReuseForWrite renames oldname to newname and opens it for writing.
 func (fs *S3FS) ReuseForWrite(oldname, newname string) (vfs.File, error) {
 	if err := fs.Rename(oldname, newname); err != nil {
-		_ = fs.Remove(oldname)
+		return nil, err
 	}
 	return fs.OpenReadWrite(newname)
 }
@@ -179,14 +183,18 @@ func (fs *S3FS) MkdirAll(dir string, perm os.FileMode) error {
 }
 
 // Lock creates an exclusive lock file, returning a Closer to release it.
+// Exclusivity is enforced via an S3 conditional put (If-None-Match: *), which
+// fails if the object already exists. This prevents two callers from both
+// believing they hold the lock simultaneously.
 func (fs *S3FS) Lock(name string) (io.Closer, error) {
 	_, err := fs.client.PutObject(context.Background(), &s3.PutObjectInput{
-		Bucket: aws.String(fs.bucket),
-		Key:    aws.String(fs.s3Key(name)),
-		Body:   bytes.NewReader(nil),
+		Bucket:      aws.String(fs.bucket),
+		Key:         aws.String(fs.s3Key(name)),
+		Body:        bytes.NewReader(nil),
+		IfNoneMatch: aws.String("*"),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("s3vfs: lock %q is already held or could not be acquired: %w", name, err)
 	}
 	return &s3Lock{fs: fs, name: name}, nil
 }
@@ -239,14 +247,20 @@ func (fs *S3FS) List(dir string) ([]string, error) {
 
 // Stat returns os.FileInfo for the named file or directory.
 func (fs *S3FS) Stat(name string) (os.FileInfo, error) {
+	key := fs.s3Key(name)
+	if key == "" {
+		// Root of the namespace is always a virtual directory.
+		return &s3FileInfo{name: name, isDir: true}, nil
+	}
+
 	resp, err := fs.client.HeadObject(context.Background(), &s3.HeadObjectInput{
 		Bucket: aws.String(fs.bucket),
-		Key:    aws.String(fs.s3Key(name)),
+		Key:    aws.String(key),
 	})
 	if err != nil {
 		if isNotFound(err) {
 			// Check whether any objects exist under this prefix (virtual directory).
-			prefix := fs.s3Key(name) + "/"
+			prefix := key + "/"
 			out, listErr := fs.client.ListObjectsV2(context.Background(), &s3.ListObjectsV2Input{
 				Bucket:  aws.String(fs.bucket),
 				Prefix:  aws.String(prefix),
